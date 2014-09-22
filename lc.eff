@@ -1,0 +1,68 @@
+type 'a environment = effect
+  operation ref : 'a -> int
+  operation augment : 'a * int -> unit
+end ;;
+
+type 'a storage = effect
+  operation alloc : 'a -> int
+  operation deref : int -> 'a
+end ;;
+
+let store i s =
+  new storage @ (i, s) with
+    operation alloc x @ (i, s) -> (i, (i + 1, (i, x)::s))
+    operation deref p @ (i, s) -> (match (assoc p s) with
+                                     Some x -> (x, (i, s))
+                                   | None -> (0, (i, s)))
+  end ;;
+
+let env e = 
+  new environment @ e with
+    operation ref v @ s ->  (match (assoc v s) with
+                               Some v' -> (v', s)
+                             | None -> (0, s))
+    operation augment (a, v) @ s -> ((), (a, v)::s)
+  end ;;
+
+type exp =
+  | Int of int
+  | Var of string
+  | Abs of string * exp
+  | App of exp * (exp list)
+  | AddOp ;;
+
+let var x = Var x ;;
+let abs p e = Abs (p, e) ;;
+let app f a = App (f, [a]) ;;
+let int i = Int i;;
+let add x y = App (AddOp, [x; y]);;
+
+let e = (env []) ;;
+let s = (store 0 []) ;;
+let c = ref id  ;;
+let args = ref [] ;;
+
+let eval_h e s c arg = handler
+  | arg#lookup () k -> print_endline "POPPING ARGS"; k (arg#lookup ())
+  | arg#update v k -> print_endline "PUSHING ARGS"; k (arg#update v)
+  | c#lookup () k -> k (c#lookup ()) 
+  | c#update v k -> k (c#update v)
+  | s#deref p k -> print_endline "DEREFING"; k (s#deref p) 
+  | s#alloc v k -> print_endline "ALLOCATING"; k (s#alloc v)
+  | e#augment (a, v) k -> print_endline "LETTING VAR"; k (e#augment (a, v))
+  | e#ref v k -> print_endline "REFFING VAR"; k (e#ref v)
+  | val x -> x ;;
+
+let rec eval expr =
+  match expr with 
+  | Int i -> (s#alloc i)
+  | Var a -> e#ref a
+  | Abs (p, t) -> e#augment (p, (head !args)); eval t
+  | App (f, a) -> args := map eval a; eval f
+  | AddOp -> match map s#deref !args with
+               [x; y] -> x + y
+             | _ -> raise invalidArgument "AddOp args mismatch" ;;
+
+with eval_h e s c args handle
+ eval (app (abs "a" (add (var "a") (int 3))) (int 4)) ;;
+
