@@ -1,11 +1,21 @@
 #lang racket
 (require racket/control)
 
+(define (return x) (lambda (k) (k x)))
+(define (bind m f) (lambda (k) (m (lambda (v) ((f v) k)))))
+
+(define (reify thunk)
+  (bind (reset (return (thunk)))
+        (lambda (x) (return x))))
+ 
+(define (reflect m)
+  (shift k (bind m k)))
+
 (struct E (r))
 (struct V (v))
 
-(define (send f) (shift k (E (f k))))
-(define (admin m) (reset (V (m))))
+(define (send f) (reflect (lambda (k) (E (f k)))))
+(define (admin m) ((reify m) V))
 
 (define (fmap f m)
   (match m
@@ -27,8 +37,7 @@
     (match m
       [(V v) v]
       [(E (Reader k)) (loop (k e))]
-      [(E u) (loop (relay u))]
-      ))
+      [(E u) (loop (relay u))]))
   (loop (admin m)))
 
 (define (t1) (+ (ask) 1))
@@ -51,6 +60,7 @@
 
 (define (ts1) (put 10) (get))
 (runState ts1 0)
+
 
 (define-syntax with-handler
   (syntax-rules ()
